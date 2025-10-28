@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:opus_dart/opus_dart.dart';
 import 'package:opus_demo/parcool_audio_recorder.dart';
-import 'package:opus_demo/parcool_data_converter.dart';
 import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -49,42 +48,15 @@ class _MyHomePageState extends State<MyHomePage> {
   late final ParcoolFileUtil fileUtil; // 用来测试保存到本地的工具类 [仅仅测试需要该代码]
   final int sampleRate = 16000;
   final int numChannels = 1;
-  final List<int> _pcmBuffer = [];
-  late final int _opusFrameSize = (sampleRate * numChannels * 0.020).toInt(); // opus的encoder需要配置为2.5ms, 5ms, 10ms, 20ms, 40ms and 60ms，这里选取配置的是20ms
 
   bool _isRecording = false;
   String? _savedPath;
 
-  void _processPcmChunk(Uint8List pcmDataChunk) {
-    Int16List pcmSamples;
-    try {
-      pcmSamples = uint8ListToInt16List(pcmDataChunk);
-    } catch (e) {
-      debugPrint("Error converting PCM data: $e");
-      return;
-    }
-    _pcmBuffer.addAll(pcmSamples);
-    while (_pcmBuffer.length >= _opusFrameSize) {
-      final Int16List opusFrame = Int16List.fromList(
-        _pcmBuffer.sublist(0, _opusFrameSize),
-      );
-      _pcmBuffer.removeRange(0, _opusFrameSize);
-      try {
-        final opusData = converter.pcmToOpusInt16List(opusFrame);
-        // 保存到本地文件 [仅仅测试需要该方法]
-        final pcmData = converter.opusToPcm(opusData);
-        fileUtil.add(pcmData);
-      } catch (e) {
-        debugPrint("Opus encode error: $e");
-      }
-    }
-  }
-
   @override
   void initState() {
     // 2. 初始化recorder与convert
+    _initConverter();// 需要先调用_initConverter()再调用_initRecorder()
     _initRecorder();
-    _initConverter();
     _initFileUtil();
     super.initState();
   }
@@ -94,11 +66,15 @@ class _MyHomePageState extends State<MyHomePage> {
     recorder = ParcoolAudioRecorder(
       sampleRate: sampleRate,
       numChannels: numChannels,
-      onData: (Uint8List data) {
-        _processPcmChunk(data);
+      converter: converter,
+      onData: (Uint8List opusData) {
+        // TODO: 这里可以直接使用这个opusData了，比如：sendOpusDataToServer(opusData)
+        // 保存到本地文件 [仅仅测试需要下面的代码]
+        final pcmData = converter.opusToPcm(opusData);
+        fileUtil.add(pcmData);
       },
       onDone: () async {
-        // 这是完成录制后的回调，如果用不到可以删掉这些代码
+        // 这是完成录制后的回调，此处用来保存文件到本地测试是否正常用的，如果用不到可以删掉这些代码
         final Directory appDir = await getApplicationDocumentsDirectory();
         final String filePath =
             '${appDir.path}/my_new_recording${DateTime.now().millisecondsSinceEpoch}.wav';
